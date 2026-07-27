@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bloc-os"
+version = "0.2.0.dev0"
+description = "Aviation-instrument inspired operating environment for productivity and time management"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Soya" }]
+requires-python = ">=3.11"
+
+# Python 3.11+ ships `tomllib` in the standard library, so no TOML *reader*
+# dependency is needed. `tomli-w` is still required because there is no
+# standard-library TOML *writer*.
+dependencies = [
+    "colorama~=0.4.6",
+    "tomli-w>=1.0",
+    "numpy>=1.24",
+    "sounddevice>=0.4.6",
+    "soundfile>=0.12",
+    "faster-whisper~=1.2.1",
+    "pygame>=2.5",
+]
+
+[project.optional-dependencies]
+# Raspberry Pi appliance target. Installed on the device only.
+#
+# NOTE: RPi.GPIO does NOT work on the Pi 5 — the RP1 southbridge changed the
+# interface. gpiozero with the lgpio backend is the supported path.
+pi = [
+    "gpiozero>=2.0",
+    "lgpio>=0.2.2.0",
+    "python-escpos>=3.1",
+]
+
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+bloc = "bloc.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["bloc*"]
+
+# ─── Lint ─────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Legacy modules are being replaced subsystem-by-subsystem. Each is removed
+# from this list by the session that ports it, so the exclusion shrinks to
+# nothing rather than becoming permanent.
+extend-exclude = [
+    "core",
+    "ui",
+    "tasks",
+    "voice",
+    "printer",
+    "main.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes  — would have caught the undefined name in voice/handler.py
+    "W",    # warnings
+    "I",    # import sorting
+    "B",    # bugbear   — would have caught the mutable default arguments
+    "UP",   # pyupgrade
+]
+
+# ─── Tests ────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
