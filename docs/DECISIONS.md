@@ -220,3 +220,241 @@ Autoflight port, or extraction.
 ### Next
 
 **S2** as above, then **S3** — the MFD contract in `bloc/ui/screen.py`.
+
+---
+
+## D2 — Schedule review: a sequencing bug and three shape fixes
+
+**Date:** 2026-07-29
+**No code.** A detailed read-through of the schedule before writing anything
+against it, which surfaced one correctness bug and several places where the plan
+was quietly optimistic.
+
+### The bug: the migration would have blinded the working system
+
+The rewrite's central promise is that the old code keeps running until the
+session that deletes it. But the migration was scheduled to *execute* in week 3,
+moving `inbox.md`, `boards/*.md` and `calendar/*.md` into `strips/` — while the
+legacy shell, which reads those exact files via `Vault.list_tasks()` and
+`AgendaFile`, remained the daily driver until the new surface landed in week 5.
+
+**Two weeks with a system that compiles but cannot see your tasks.** That is a
+broken state sitting exactly where the plan claimed there would never be one.
+
+Fixed by splitting build from execution:
+
+- **Week 3** builds the migration tool, tests it, and verifies the dry-run diff.
+  Nothing moves.
+- **Week 5** executes it as the first act of the week, immediately followed by
+  S10/S11 — the surface that reads strips. The vulnerable window shrinks from two
+  weeks to hours inside one session.
+
+A stale consequence fixed at the same time: S16's note that kiosk boot could
+launch the legacy entry point is wrong post-migration. It launches `python -m
+bloc`; the cinematic boot sequence arrives with S12 in the same week.
+
+Worth naming the pattern — this is the same class of defect as the `**due:**`
+mismatch between `ui/autoflight.py:262` and `core/vault.py:77`: two parts of the
+system drifting out of agreement about who reads what. It showed up in the
+schedule before it could show up in the code.
+
+### Month 1 violated the plan's own rule
+
+The plan says, in bold, *never do two chore sessions in a row*. Month 1 as
+written was eight consecutive infrastructure sessions with no visible payoff
+until week 5 — the highest-probability abandonment point in the whole schedule,
+at double the project's natural pace.
+
+The fix was a swap, because one session was mis-placed: **S9 (HAL) has no
+consumer until S12's boot probes in week 11**, so sitting in week 4 was pure
+thematic tidiness. Meanwhile **D1 (the recorder) barely depends on the strip
+model** — it needs audio capture, a `debriefs/` directory, and S8's `[debrief]`
+config section.
+
+So D1 moved to week 4 and S9 to week 6. Three things improved at once: month 1
+now ends with something usable that evening; the corpus deadline — the only
+deadline in the plan with zero slack — gained two weeks of shakedown, growing the
+corpus from ~28 toward ~40; and S9 still lands five weeks before its first
+consumer.
+
+Because direct-to doesn't exist until week 5, D1 binds a temporary key in the
+legacy shell and S11 rebinds it to direct-to, retiring the key. Strangler-fig
+applied to a keybinding.
+
+### Month 4 was overloaded — S15 is really two sessions
+
+Porting a 966-LOC pygame application onto a new data model *and* deleting the
+entire legacy tree was budgeted as one half-week session. Split into S15a (the
+port — drawing code intact, data layer replaced) and S15b (deletion plus the
+broken-import chase).
+
+**S15a is scheduled into week 12**, alongside S13 and S14 — the two lightest
+sessions in the plan — making that a deliberate three-session week. This is what
+keeps every peripheral inside the four months rather than pushing e-ink out.
+Month 4 now has no remaining slack, so the cut order is a live expectation rather
+than an emergency brake.
+
+### D2's mechanics needed pinning down
+
+"Background transcription on a worker thread" hid three decisions that determine
+whether the dead-zone corpus survives:
+
+- **The WAV persists in `debriefs/pending/` until transcription *succeeds*.**
+  `keep_audio = false` means discard-after-success, never never-write. Conflating
+  those silently eats a debrief on any crash — during a month when nobody is
+  watching.
+- **The pending directory is a queue, drained on next boot.** Quitting
+  mid-transcription then costs nothing. Designing it as a queue from day one also
+  means P1 hardens it into a systemd job as a deployment change rather than a
+  rewrite.
+- **Whisper loads on the worker only.** Boot stays instant, but `small` at int8
+  is roughly a gigabyte resident — fine on 8 GB, and the point where the resident
+  model daemon stops being theoretical.
+
+### Two frictions the plan had not named
+
+**The corpus depends on a busy person's daily discipline.** Capture must be
+trivial to reach or the dead zone yields 8 rambles rather than 40. Resolved by
+routing it through direct-to — one key, then the word `debrief` — rather than
+adding a fifth global key. The global set stays closed at four (direct-to, back,
+home, quit); new capabilities cost a keyword, not a keybinding. That property is
+what keeps the surface small as the system grows. Target is *most days*, not a
+streak.
+
+**D3's eval corpus cannot enter the repo.** Real rambles are a diary, and this
+repository may be shown in a university application. The eval harness runs
+locally against `~/bloc/debriefs/` and reports aggregate precision/recall;
+committed tests use synthetic fixtures only. Same principle as the vault: real
+data stays home, only the machinery is public.
+
+### Smaller corrections
+
+- **Trend honesty at n≈40:** present observations, not statistics — sparklines
+  and "you said *tired* 9 times; 6 were Thursdays", never correlation
+  coefficients. Defensible statistics need months of data; that is a backlog
+  item.
+- **Migration safety had a gap:** moving originals to `archive/pre-unification/`
+  protects against loss but not against a buggy migrator mangling content while
+  writing. A plain `tar` of `~/bloc` to a different location is now a required
+  pre-flight step.
+- **WSL is a hard rule from S2 onward,** not a suggestion. All three fatal Linux
+  bugs came from Windows-only development, and weeks 1–10 are laptop weeks. Any
+  session touching `keys.py` or an input loop verifies under WSL.
+- **Pace, stated in hours:** two sessions a week is roughly 5–6 focused hours
+  weekly for three of the four months.
+
+### Next
+
+**S2** — `bloc/ui/`, as planned.
+
+---
+
+## S2 — The aesthetic layer
+
+**Date:** 2026-07-29
+**Milestone:** Month 1, week 1
+
+### What changed
+
+`bloc/ui/` now holds the canonical presentation layer: `theme.py` (glyph and
+colour data), `vocab.py` (status words), `keys.py` (the single key reader),
+`widgets.py` (pure layout functions) and `console.py` (the only module that
+writes). 88 tests, all fast, none needing a terminal.
+
+Nothing is wired into the running app yet. v0.1's own copies stay in place until
+the sessions that port each screen — strangler fig, so the daily driver is
+untouched.
+
+### The three Linux bugs, and their shared root cause
+
+All three came from the same mistake: toggling terminal mode around *every
+individual keypress*.
+
+- `ui/settings_ui.py:18` called `termios.tcgetattr(fd, termios.TCSADRAIN, old)`
+  where it meant `tcsetattr`. Wrong arity, so every keypress raised `TypeError`
+  and left the terminal raw.
+- `ui/pulse_ui.py:15` and `ui/ambient_ui.py:15` called `select()` while stdin was
+  still in *cooked* mode — raw mode was entered only after `select` reported
+  readable. Cooked stdin is not readable until Enter, so the live countdown and
+  the screensaver's exit-on-keypress never fired.
+
+Fixed structurally rather than one at a time: `raw_mode()` is a context manager
+held for the lifetime of a screen, and the read functions assume it is active.
+It is re-entrant, so nesting is a no-op and a standalone `get_key()` can safely
+enter it itself. There is now exactly one place in the system where terminal
+mode is manipulated, so this class of bug has one place left to occur.
+
+Related choices:
+
+- **Cbreak, not full raw.** ISIG stays enabled so Ctrl-C still interrupts. v0.1
+  used `setraw`, which on a locked-up screen leaves no way out.
+- **Terminal flags set explicitly** (clear `ICANON`/`ECHO`, `VMIN=1`, `VTIME=0`)
+  rather than via `tty.setcbreak`, whose handling of `ECHO` has differed across
+  Python versions.
+- **`raw_mode()` is a no-op when stdin is not a tty**, so tests and pipes work
+  without special-casing.
+
+### Choices made
+
+- **Five modules, not the four planned.** Splitting `theme.py` (data) from
+  `console.py` (I/O) earned its extra file: it is what lets every layout
+  function be pure and directly testable, rather than asserting against captured
+  stdout. v0.1's `Environment` conflated the two.
+
+- **`Glyphs` is a frozen dataclass, not a dict.** v0.1's `env.char("bulet")`
+  returned `""` silently. A mistyped field now fails at import.
+
+- **The escape decoder takes its reader as an argument.** Arrow keys arrive as
+  multi-byte sequences and decoding them is the fiddliest logic here, so it is a
+  pure function over an injected `read_more` and tested without a terminal —
+  including the case that matters most: a bare Escape must not hang waiting for
+  a sequence that is not coming.
+
+- **`vocab.py` is the union of v0.1's three copies.** Worth recording that they
+  had *not* diverged in their values — every overlapping key agreed. They
+  diverged in *coverage*: each screen carried only the subset it needed, so
+  adding a status meant guessing which copies to update. Unknown keys now raise
+  instead of returning a placeholder.
+
+- **`bar()` clamps its fraction.** An overrunning focus timer yields a fraction
+  above 1.0, and v0.1's unclamped `round(value * width)` would emit a bar wider
+  than its own field and break the surrounding layout.
+
+- **`sparkline(0, 0)` reads empty, not full.** `ui/shell.py:117` passed the same
+  value as both `done` and `total`, so the header bar showed 100% regardless of
+  what was outstanding. The caller was wrong, but the function can no longer be
+  read as agreeing with it.
+
+### A bug introduced and caught in the same session
+
+The first version of `leader()` defaulted its fill character to `·`. Rendering
+all three themes side by side showed FOG — documented as "no symbols" — still
+drawing leaders out of middle dots.
+
+That is precisely the v0.1 bug this layer exists to fix, relocated from 128 call
+sites into one function signature. `leader_fill` is now **theme data** and
+`leader()` takes a `Glyphs`; there is no default to fall back on.
+
+The lesson worth keeping: *a hardcoded glyph anywhere below `theme.py` is the
+bug, however few places it appears in.* Rendering every theme and looking at the
+output caught what the unit tests did not, because the tests asserted on HUD.
+
+### Not done, deliberately
+
+- **The ruff `extend-exclude` list is unchanged.** `ui/` still holds eight v0.1
+  modules; the entry comes off when the last of them goes in S15b.
+- **Nothing is wired up.** `theme.py` supersedes `ui/environment.py`, but the
+  legacy shell keeps its own copy until each screen is ported.
+
+### Housekeeping
+
+The D2 entry above was orphaned when PR #1 merged at an earlier head than the
+branch tip, so it never reached `main`. Recovered by cherry-pick onto this
+branch. Worth watching for on future merges: confirm the merge commit's parent
+is the branch tip, not just that the merge succeeded.
+
+### Next
+
+**S3** — `bloc/ui/screen.py`, the MFD contract: the framework owns the key loop,
+apps declare soft keys as data, the legend renders itself, and the four global
+keys (direct-to, back, home, quit) work from every screen.
