@@ -759,3 +759,128 @@ library would not compile. `ui/shell.py:15` imports `ui/autoflight.py`, which
 imports pygame at module scope. S10's registry makes that a lazy dotted path,
 and the verification for it — *"Whisper and pygame do not load unless invoked"* —
 now has a concrete failure behind it rather than a principle.
+
+---
+
+## D6 — The design system
+
+**Date:** 2026-07-29
+**Milestone:** Month 1, week 2
+
+### What changed
+
+`docs/DESIGN.md` is new — the frame, the grid, the colour roles, the strip
+anatomy. `bloc/ui/theme.py` is rewritten against it, `console.py` gains colour
+depth detection, and `widgets.py` gains the grid. 331 tests.
+
+### The renderer question, settled by rendering
+
+Three prototypes of the traffic scope, then three of OBJECTIVES.
+
+**Terminal graphics were proposed and rejected.** Half-blocks (200×112) cannot
+draw a curve. Braille (200×224) fixes curves but renders too faint, and —
+decisively — **braille glyph coverage and dot alignment vary by terminal font**,
+so the map would look different in Terminal.app, on the Pi console and over SSH.
+A screen whose appearance depends on which font a terminal ships is the exact
+inconsistency the rework exists to remove. pygame-ce at 1920×1080 is clearly
+better and took 260 lines.
+
+**But pygame is not the answer for text screens.** Rendered OBJECTIVES twice at
+full width — once in a terminal, once in pygame — and they are
+near-indistinguishable. Pygame's advantage is *drawing*: curves, glow, arbitrary
+geometry. A strip board has none of that. So:
+
+- **Terminal** for OBJECTIVES · AGENDA · SYSTEMS · DEBRIEF
+- **pygame-ce** for TRAFFIC only, over KMS/DRM on the Pi — no X, no desktop
+- Both read `theme.py`. `ScreenStack.draw()` needs no second backend.
+
+SSH access to every screen but the scope therefore costs nothing, which matters
+from week 11 when the Pi is developed on remotely.
+
+### The real cause of "inconsistent between screens"
+
+Not the renderer. v0.1's scope carried **its own hardcoded palette, its own
+status words and its own column constants** — `#00FF41` retyped inside
+`ui/autoflight.py`, `LAND_COL = 48` beside `COL_WIDTH = 52`. Two screens cannot
+drift if there is one place to change.
+
+### Choices made
+
+- **Colour is a role, never a colour.** `attention`, not `amber`. That is what
+  lets VOID express the same system as a brightness ramp and FOG express it as
+  nothing at all. Three bands — surface, text hierarchy, state — and mixing them
+  is how a palette rots.
+
+- **The four-column grid is shared with the scope.** Its strip bays are 480 px
+  across 1920; terminal screens divide their width the same way, so a strip in
+  the objectives list lands on the same column as the same strip on the scope.
+  A shared palette gets two screens the same colour and different shapes; a
+  shared grid makes the frame structural.
+
+- **The grid collapses below 120 columns.** Four columns of nine characters is
+  not a layout. An 80-column SSH window gets one column.
+
+- **`COL = 52` is gone as a panel width.** Width comes from `Console.width`;
+  `PANEL` is only a fallback for pipes and tests.
+
+- **The three environments are three real answers**, not three glyph sets. HUD
+  is the device. VOID separates state by *brightness only*, so it is legible
+  with any colour blindness. **FOG sets every palette role to `None` and the
+  writer emits no escape at all** — not even a reset. That makes FOG the
+  strongest available test that meaning never lives in colour: a screen unusable
+  in FOG is saying something in colour it never says in words.
+
+- **Colour depth is detected, not assumed** — truecolor, then the 256-colour
+  cube, then nothing when piped or when `NO_COLOR` is set. Development is on a
+  truecolor terminal; the Pi's own console is not, and a palette that only works
+  on the laptop breaks on the device.
+
+- **Never colour alone.** An overdue strip carries the `flag` glyph on its left
+  edge as well as `pressure` colouring. Fixed width, so nothing shifts when it
+  appears.
+
+### Two defects the renders exposed
+
+**HUD's `primary` and `secondary` were the same green.** The hierarchy every
+screen assumed did not exist on screen — most of "hard to read" was this one
+line. Invisible in source, obvious the moment OBJECTIVES was rendered full-width
+as a flat wall of one colour.
+
+**Fields overlapped rather than dropping.** At 150 columns a bay is 34
+characters and a strip needs 38, which produced `#2dalt` where tag and due had
+collided. Now the drop order is fixed — flag, callsign and due always render,
+title takes what is left, tag goes first. An overlapping field is silently
+wrong; a missing one is merely less informative.
+
+### A measurement mistake worth keeping
+
+The first legibility test used `sum(rgb)` as brightness and declared the palette
+broken: HUD's `primary` `(0,255,65)` sums *lower* than `secondary`
+`(124,194,158)`. But relative luminance is weighted — the eye is roughly seven
+times more sensitive to green than to blue — and by that measure the ramp was
+already correct.
+
+Fixing the test then exposed two colours that genuinely were too dark: `dim` at
+3.9:1 and `faint` at 2.1:1 against the background. Both were brightened to meet
+WCAG floors while keeping their hue.
+
+`luminance()` and `contrast()` now live in `theme.py` rather than in the tests,
+because S8 lets a config file supply a palette and an unreadable theme should be
+something the loader can reject rather than something discovered on a sunlit
+panel.
+
+### Not done, deliberately
+
+- **`bloc/ui/canvas.py` was never built** — the half-block/braille module this
+  session's prototypes rejected.
+- **No screens were ported.** S11 does that; D6 only lays the system down.
+- **The pygame backend is not in the repository yet.** It arrives with S15a,
+  built against `theme.py` rather than carrying its own colours.
+
+### Next
+
+**S5** — the strip record: schema, TOML frontmatter, parser, `bloc/core/strips.py`.
+Lands on `formats.py`'s frontmatter and native TOML dates, so it is largely a
+dataclass and a validation pass. **S5 and S6 are a pair** — never stop between
+them, because a half-built migration is the one genuinely dangerous state in
+this project.

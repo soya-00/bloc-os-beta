@@ -40,11 +40,12 @@ from bloc.ui.console import Console
 from bloc.ui.keys import Key, get_key
 from bloc.ui.keys import raw_mode as _raw_mode
 from bloc.ui.theme import Glyphs
-from bloc.ui.widgets import COL, leader
+from bloc.ui.widgets import DEFAULT_WIDTH, leader
 
-#: Width of the MFD panel. Matches `widgets.COL`, so the header's dot leader, the
-#: rules and the soft-key legend all end at the same column.
-PANEL = COL
+#: Fallback panel width, used when nothing supplies a real one. The live width
+#: comes from `Console.width`, so a screen fills the display on the appliance and
+#: still lays out in an 80-column SSH window.
+PANEL = DEFAULT_WIDTH
 
 
 class Signal(enum.Enum):
@@ -226,7 +227,7 @@ def prompt(
     buf: list[str] = []
     while True:
         console.stream.write("\r\033[K")
-        console.write(f"{label} > {''.join(buf)}", "accent", end="")
+        console.write(f"{label} > {''.join(buf)}", "attention", end="")
         console.stream.flush()
 
         key = read_key()
@@ -302,20 +303,22 @@ class ScreenStack:
         glyphs = c.theme.glyphs
         screen = self.current
 
+        width = c.width
+
         c.clear()
-        c.primary(render_header(getattr(screen, "title", ""), glyphs))
+        c.primary(render_header(getattr(screen, "title", ""), glyphs, width))
 
         status = self._call_optional(screen, "status")
         if status:
             c.dim(str(status))
-        c.rule("double", PANEL)
+        c.rule("double", width)
         c.blank()
 
         screen.render(c)
 
         c.blank()
-        c.rule("single", PANEL)
-        for line in render_legend(self._soft_keys(screen)):
+        c.rule("single", width)
+        for line in render_legend(self._soft_keys(screen), width):
             c.secondary(line)
 
     def dispatch(self, key: str) -> bool:
