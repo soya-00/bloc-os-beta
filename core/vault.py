@@ -130,8 +130,10 @@ class Vault:
                 task_count += 1
                 if task_count == index:
                     done_date = datetime.now().strftime("%Y-%m-%d")
-                    lines[i]  = line.replace("- [ ]", "- [x]") + f"  {done_date}"
-                    filepath.write_text("\n".join(lines), encoding="utf-8")
+                    # Anchored: an unanchored replace rewrites every "- [ ]"
+                    # occurring inside the title too.
+                    lines[i]  = "- [x]" + line[5:] + f"  {done_date}"
+                    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
                     return True
         return False
 
@@ -148,7 +150,7 @@ class Vault:
                 task_count += 1
                 if task_count == index:
                     lines.pop(i)
-                    filepath.write_text("\n".join(lines), encoding="utf-8")
+                    filepath.write_text("\n".join(lines) + "\n", encoding="utf-8")
                     return True
         return False
 
