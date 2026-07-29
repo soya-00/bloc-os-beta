@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import sys
 
-from bloc.ui.theme import Theme, get_theme
+from bloc.ui.theme import SEPARATOR_WIDTH, Theme, get_theme
 from bloc.ui.widgets import separator
 
 
@@ -56,8 +56,8 @@ class Console:
     def blank(self) -> None:
         self.stream.write("\n")
 
-    def rule(self, style: str = "single") -> None:
-        self.secondary(separator(self.theme.glyphs, style))
+    def rule(self, style: str = "single", width: int = SEPARATOR_WIDTH) -> None:
+        self.secondary(separator(self.theme.glyphs, style, width))
 
     def clear(self) -> None:
         """Clear the screen, preferring an ANSI escape over spawning a shell."""

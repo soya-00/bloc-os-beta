@@ -25,6 +25,8 @@ from colorama import Fore, Style, init
 
 init()
 
+#: Default rule width. A default, not a constraint — `widgets.separator()` takes
+#: a width, so the MFD panel can rule to its own column without the theme knowing.
 SEPARATOR_WIDTH = 40
 
 
@@ -35,6 +37,10 @@ class Glyphs:
     bullet: str
     bullet_done: str
     bullet_active: str
+    #: Rule characters — single characters, repeated to width at render time.
+    #: Storing them pre-multiplied baked a fixed 40-column panel into theme data,
+    #: which is the same mistake as a hardcoded leader fill: a width belongs to
+    #: the layout, not to the glyph vocabulary.
     separator: str
     separator_dbl: str
     separator_dot: str
@@ -90,9 +96,9 @@ HUD = Theme(
         bullet="▢",
         bullet_done="▣",
         bullet_active="▶",
-        separator="─" * SEPARATOR_WIDTH,
-        separator_dbl="═" * SEPARATOR_WIDTH,
-        separator_dot="·" * SEPARATOR_WIDTH,
+        separator="─",
+        separator_dbl="═",
+        separator_dot="·",
         corner_tl="◈",
         indicator="●",
         indicator_off="○",
@@ -129,9 +135,9 @@ VOID = Theme(
         bullet="[ ]",
         bullet_done="[x]",
         bullet_active="[>]",
-        separator="-" * SEPARATOR_WIDTH,
-        separator_dbl="=" * SEPARATOR_WIDTH,
-        separator_dot="." * SEPARATOR_WIDTH,
+        separator="-",
+        separator_dbl="=",
+        separator_dot=".",
         corner_tl="[*]",
         indicator="[+]",
         indicator_off="[-]",
@@ -168,9 +174,9 @@ FOG = Theme(
         bullet="  -",
         bullet_done="  *",
         bullet_active="  >",
-        separator=" " * SEPARATOR_WIDTH,
-        separator_dbl=" " * SEPARATOR_WIDTH,
-        separator_dot=" " * SEPARATOR_WIDTH,
+        separator=" ",
+        separator_dbl=" ",
+        separator_dot=" ",
         corner_tl="",
         indicator="on",
         indicator_off="off",

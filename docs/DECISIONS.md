@@ -458,3 +458,111 @@ is the branch tip, not just that the merge succeeded.
 **S3** — `bloc/ui/screen.py`, the MFD contract: the framework owns the key loop,
 apps declare soft keys as data, the legend renders itself, and the four global
 keys (direct-to, back, home, quit) work from every screen.
+
+---
+
+## S3 — The MFD contract
+
+`bloc/ui/screen.py`. The v0.1 complaint was never the *number* of commands — a
+real instrument panel has plenty of buttons. It was that the same key meant
+different things in different places (`f`, `s`, `k`, `n`, `a` all collided
+between the top level and inner screens), with nothing on screen to tell you
+which, and no reliable way back to a known place. Eight copy-pasted `while True:`
+loops with eight private binding tables is what produced that.
+
+### The framework owns the loop
+
+`ScreenStack` is the only key loop in BLOC. A screen is anything with `title` and
+`render()`; `soft_keys()`, `on_key()` and `status()` are optional and resolved
+with `getattr`. No base class, no ABC — the same duck-typed contract chosen for
+apps, for the same reason: a screen starts at ten lines and grows only where it
+needs to.
+
+Handlers return an `Outcome` — `None`/`STAY` to hold position, a `Signal` to
+navigate, or a screen instance to push. That is the whole navigation vocabulary,
+and it means no screen ever manipulates the stack directly.
+
+### Why globals are dispatched before the screen sees the key
+
+`dispatch()` resolves the four globals first, unconditionally, and only then
+consults soft keys and `on_key`. The ordering is the guarantee: a screen cannot
+swallow `BACK` even by accident, which is the failure mode that makes a nested UI
+feel like a trap. There is a test that hands a deliberately greedy `on_key` a
+`q` and asserts it never arrives.
+
+Belt and braces on the same property: **`SoftKey` raises on construction if it
+claims a global key.** "No key means two different things in two places" is
+therefore a property of the type rather than a review checklist item, and
+`ScreenStack` additionally rejects a screen that binds one key to two labels.
+
+### Which four keys, and why mostly punctuation
+
+    /     DIRECT-TO      Esc   BACK      `  HOME      q  QUIT
+
+Reserving a *letter* globally steals it from every screen forever, so the globals
+are punctuation with one deliberate exception: `q` is worth its letter because
+every terminal user already expects it, and one letter out of twenty-six is a
+cheap price. Everything else in the alphabet stays available to screens.
+
+`Key.HOME` is accepted as a synonym for the backtick, but the legend advertises
+the backtick — a Mac laptop has no Home key without a chord, and development is
+happening on macOS until the Pi arrives in week 7.
+
+**The set is closed.** There is a test asserting there are exactly four, so a
+fifth global is a conscious edit rather than a drive-by addition. Every candidate
+for a fifth — including DEBRIEF capture in D1 — goes through direct-to instead.
+
+### Direct-to ships before its parser
+
+`ScreenStack` takes `direct_to` as an injected callable. `IntentParser` does not
+arrive until S10, so today the key opens the prompt, collects a line and drops
+it. That is deliberate: the *key* is part of the interaction model and had to be
+reserved now, whereas what it does with the text is S10's problem. The injection
+seam is also what lets the entire loop be tested without a terminal.
+
+`prompt()` is a hand-rolled line editor rather than `input()`, because the
+terminal is in cbreak mode and `input()` would need canonical mode restored and
+put back — v0.1's two attempts at exactly that are two of the three bugs that
+made the Linux build unusable. Printable characters, backspace, enter, escape;
+no history, no cursor movement. It is a command entry field on an instrument.
+
+### A width was hiding in the theme data
+
+Building the panel exposed that `Glyphs.separator` stored `"─" * 40` — a
+pre-multiplied string, so every rule in the system was 40 columns while the
+dot-leader column was 52. A rule that cannot match the panel it sits in is a
+layout decision trapped in theme data.
+
+The three separator fields are now **single characters**, and `separator()` takes
+a width defaulting to `SEPARATOR_WIDTH`. Existing tests pass unchanged. This is
+the same lesson as `leader_fill` in S2 arriving from the other direction: last
+time a glyph was hardcoded outside the theme, this time a width was hardcoded
+inside it. The rule that covers both: *the theme owns characters, the layout owns
+columns.*
+
+### Smaller decisions
+
+- **A disabled soft key empties its bracket rather than vanishing** — `[ ] SCRUB`.
+  Buttons on a real panel do not move when they grey out, and a legend that
+  reflows on every state change is unreadable.
+- **Back at the root is a no-op, not an exit.** On an appliance there is nothing
+  below home to fall into. Quit is its own key.
+- **`pythonpath = ["."]` added to the pytest config** so `pytest` works in a
+  fresh clone without an editable install. A failing test should never actually
+  be a missing `pip install -e .`.
+
+### Verification
+
+`ruff check` clean, 149 tests green. Rendered the panel in HUD and FOG side by
+side: the FOG panel contains nothing but ASCII and ANSI colour codes — no
+symbols, and the header, rules and legend all end at column 52.
+
+### Next
+
+**S4** — `bloc/core/`: `state.py` (atomic JSON), `vault.py` (filesystem CRUD as
+the single source of truth) and `formats.py` (one parser per vault file format,
+with round-trip tests). The `**due:**` mismatch between `ui/autoflight.py` and
+`core/vault.py` exists precisely because three modules each hand-rolled their
+own parser; `formats.py` is the fix, and its round-trip tests are what stop it
+recurring. S4 and S5 are a pair — the strip record lands on top of these
+parsers, and the plan's rule is never to stop between S5 and S6.

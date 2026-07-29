@@ -76,3 +76,7 @@ select = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Put the repo root on sys.path so `pytest` works in a fresh clone without an
+# editable install first. The install is still the supported way to *run* BLOC;
+# this is so a failing test is never actually a missing `pip install -e .`.
+pythonpath = ["."]
