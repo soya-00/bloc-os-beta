@@ -734,3 +734,28 @@ record type is mostly a dataclass and a validation pass. **S5 and S6 are a pair*
 — the plan's rule is never to stop between them, because S6 builds the migration
 that reads the legacy formats and a half-built migration is the one genuinely
 dangerous state in this project.
+## H2 — pygame-ce, and a supported-Python gap
+
+`pip install -e .` fails on Python 3.14: upstream `pygame` has no 3.14 wheel, so
+pip falls through to a source build and dies on clang. The manifest declares
+`requires-python = ">=3.11"`, so this is a defect — it cannot install on a
+Python it claims to support.
+
+Switched to **`pygame-ce`**, the maintained community fork. It is a drop-in
+providing the same `pygame` module, so no import changes anywhere, and it ships
+wheels for new Python releases months ahead of upstream. The two conflict if
+both are installed; a stale environment needs `pip uninstall pygame` first.
+
+Worth recording the wider point, because it will recur: **the development
+machine is ahead of the deployment target.** Raspberry Pi OS Bookworm ships
+Python 3.11 and Trixie 3.13, while development is happening on 3.14. The
+supported range is genuinely 3.11–3.14, not "whatever the laptop has", and a
+dependency is only usable if it has wheels across that whole span. `ctranslate2`
+(via `faster-whisper`) is the next most likely to fail the same way.
+
+This also exposed the eager-import problem from the user's side rather than the
+architecture's: a terminal application refused to start because a graphics
+library would not compile. `ui/shell.py:15` imports `ui/autoflight.py`, which
+imports pygame at module scope. S10's registry makes that a lazy dotted path,
+and the verification for it — *"Whisper and pygame do not load unless invoked"* —
+now has a concrete failure behind it rather than a principle.
