@@ -346,3 +346,115 @@ data stays home, only the machinery is public.
 ### Next
 
 **S2** — `bloc/ui/`, as planned.
+
+---
+
+## S2 — The aesthetic layer
+
+**Date:** 2026-07-29
+**Milestone:** Month 1, week 1
+
+### What changed
+
+`bloc/ui/` now holds the canonical presentation layer: `theme.py` (glyph and
+colour data), `vocab.py` (status words), `keys.py` (the single key reader),
+`widgets.py` (pure layout functions) and `console.py` (the only module that
+writes). 88 tests, all fast, none needing a terminal.
+
+Nothing is wired into the running app yet. v0.1's own copies stay in place until
+the sessions that port each screen — strangler fig, so the daily driver is
+untouched.
+
+### The three Linux bugs, and their shared root cause
+
+All three came from the same mistake: toggling terminal mode around *every
+individual keypress*.
+
+- `ui/settings_ui.py:18` called `termios.tcgetattr(fd, termios.TCSADRAIN, old)`
+  where it meant `tcsetattr`. Wrong arity, so every keypress raised `TypeError`
+  and left the terminal raw.
+- `ui/pulse_ui.py:15` and `ui/ambient_ui.py:15` called `select()` while stdin was
+  still in *cooked* mode — raw mode was entered only after `select` reported
+  readable. Cooked stdin is not readable until Enter, so the live countdown and
+  the screensaver's exit-on-keypress never fired.
+
+Fixed structurally rather than one at a time: `raw_mode()` is a context manager
+held for the lifetime of a screen, and the read functions assume it is active.
+It is re-entrant, so nesting is a no-op and a standalone `get_key()` can safely
+enter it itself. There is now exactly one place in the system where terminal
+mode is manipulated, so this class of bug has one place left to occur.
+
+Related choices:
+
+- **Cbreak, not full raw.** ISIG stays enabled so Ctrl-C still interrupts. v0.1
+  used `setraw`, which on a locked-up screen leaves no way out.
+- **Terminal flags set explicitly** (clear `ICANON`/`ECHO`, `VMIN=1`, `VTIME=0`)
+  rather than via `tty.setcbreak`, whose handling of `ECHO` has differed across
+  Python versions.
+- **`raw_mode()` is a no-op when stdin is not a tty**, so tests and pipes work
+  without special-casing.
+
+### Choices made
+
+- **Five modules, not the four planned.** Splitting `theme.py` (data) from
+  `console.py` (I/O) earned its extra file: it is what lets every layout
+  function be pure and directly testable, rather than asserting against captured
+  stdout. v0.1's `Environment` conflated the two.
+
+- **`Glyphs` is a frozen dataclass, not a dict.** v0.1's `env.char("bulet")`
+  returned `""` silently. A mistyped field now fails at import.
+
+- **The escape decoder takes its reader as an argument.** Arrow keys arrive as
+  multi-byte sequences and decoding them is the fiddliest logic here, so it is a
+  pure function over an injected `read_more` and tested without a terminal —
+  including the case that matters most: a bare Escape must not hang waiting for
+  a sequence that is not coming.
+
+- **`vocab.py` is the union of v0.1's three copies.** Worth recording that they
+  had *not* diverged in their values — every overlapping key agreed. They
+  diverged in *coverage*: each screen carried only the subset it needed, so
+  adding a status meant guessing which copies to update. Unknown keys now raise
+  instead of returning a placeholder.
+
+- **`bar()` clamps its fraction.** An overrunning focus timer yields a fraction
+  above 1.0, and v0.1's unclamped `round(value * width)` would emit a bar wider
+  than its own field and break the surrounding layout.
+
+- **`sparkline(0, 0)` reads empty, not full.** `ui/shell.py:117` passed the same
+  value as both `done` and `total`, so the header bar showed 100% regardless of
+  what was outstanding. The caller was wrong, but the function can no longer be
+  read as agreeing with it.
+
+### A bug introduced and caught in the same session
+
+The first version of `leader()` defaulted its fill character to `·`. Rendering
+all three themes side by side showed FOG — documented as "no symbols" — still
+drawing leaders out of middle dots.
+
+That is precisely the v0.1 bug this layer exists to fix, relocated from 128 call
+sites into one function signature. `leader_fill` is now **theme data** and
+`leader()` takes a `Glyphs`; there is no default to fall back on.
+
+The lesson worth keeping: *a hardcoded glyph anywhere below `theme.py` is the
+bug, however few places it appears in.* Rendering every theme and looking at the
+output caught what the unit tests did not, because the tests asserted on HUD.
+
+### Not done, deliberately
+
+- **The ruff `extend-exclude` list is unchanged.** `ui/` still holds eight v0.1
+  modules; the entry comes off when the last of them goes in S15b.
+- **Nothing is wired up.** `theme.py` supersedes `ui/environment.py`, but the
+  legacy shell keeps its own copy until each screen is ported.
+
+### Housekeeping
+
+The D2 entry above was orphaned when PR #1 merged at an earlier head than the
+branch tip, so it never reached `main`. Recovered by cherry-pick onto this
+branch. Worth watching for on future merges: confirm the merge commit's parent
+is the branch tip, not just that the merge succeeded.
+
+### Next
+
+**S3** — `bloc/ui/screen.py`, the MFD contract: the framework owns the key loop,
+apps declare soft keys as data, the legend renders itself, and the four global
+keys (direct-to, back, home, quit) work from every screen.
