@@ -220,3 +220,129 @@ Autoflight port, or extraction.
 ### Next
 
 **S2** as above, then **S3** — the MFD contract in `bloc/ui/screen.py`.
+
+---
+
+## D2 — Schedule review: a sequencing bug and three shape fixes
+
+**Date:** 2026-07-29
+**No code.** A detailed read-through of the schedule before writing anything
+against it, which surfaced one correctness bug and several places where the plan
+was quietly optimistic.
+
+### The bug: the migration would have blinded the working system
+
+The rewrite's central promise is that the old code keeps running until the
+session that deletes it. But the migration was scheduled to *execute* in week 3,
+moving `inbox.md`, `boards/*.md` and `calendar/*.md` into `strips/` — while the
+legacy shell, which reads those exact files via `Vault.list_tasks()` and
+`AgendaFile`, remained the daily driver until the new surface landed in week 5.
+
+**Two weeks with a system that compiles but cannot see your tasks.** That is a
+broken state sitting exactly where the plan claimed there would never be one.
+
+Fixed by splitting build from execution:
+
+- **Week 3** builds the migration tool, tests it, and verifies the dry-run diff.
+  Nothing moves.
+- **Week 5** executes it as the first act of the week, immediately followed by
+  S10/S11 — the surface that reads strips. The vulnerable window shrinks from two
+  weeks to hours inside one session.
+
+A stale consequence fixed at the same time: S16's note that kiosk boot could
+launch the legacy entry point is wrong post-migration. It launches `python -m
+bloc`; the cinematic boot sequence arrives with S12 in the same week.
+
+Worth naming the pattern — this is the same class of defect as the `**due:**`
+mismatch between `ui/autoflight.py:262` and `core/vault.py:77`: two parts of the
+system drifting out of agreement about who reads what. It showed up in the
+schedule before it could show up in the code.
+
+### Month 1 violated the plan's own rule
+
+The plan says, in bold, *never do two chore sessions in a row*. Month 1 as
+written was eight consecutive infrastructure sessions with no visible payoff
+until week 5 — the highest-probability abandonment point in the whole schedule,
+at double the project's natural pace.
+
+The fix was a swap, because one session was mis-placed: **S9 (HAL) has no
+consumer until S12's boot probes in week 11**, so sitting in week 4 was pure
+thematic tidiness. Meanwhile **D1 (the recorder) barely depends on the strip
+model** — it needs audio capture, a `debriefs/` directory, and S8's `[debrief]`
+config section.
+
+So D1 moved to week 4 and S9 to week 6. Three things improved at once: month 1
+now ends with something usable that evening; the corpus deadline — the only
+deadline in the plan with zero slack — gained two weeks of shakedown, growing the
+corpus from ~28 toward ~40; and S9 still lands five weeks before its first
+consumer.
+
+Because direct-to doesn't exist until week 5, D1 binds a temporary key in the
+legacy shell and S11 rebinds it to direct-to, retiring the key. Strangler-fig
+applied to a keybinding.
+
+### Month 4 was overloaded — S15 is really two sessions
+
+Porting a 966-LOC pygame application onto a new data model *and* deleting the
+entire legacy tree was budgeted as one half-week session. Split into S15a (the
+port — drawing code intact, data layer replaced) and S15b (deletion plus the
+broken-import chase).
+
+**S15a is scheduled into week 12**, alongside S13 and S14 — the two lightest
+sessions in the plan — making that a deliberate three-session week. This is what
+keeps every peripheral inside the four months rather than pushing e-ink out.
+Month 4 now has no remaining slack, so the cut order is a live expectation rather
+than an emergency brake.
+
+### D2's mechanics needed pinning down
+
+"Background transcription on a worker thread" hid three decisions that determine
+whether the dead-zone corpus survives:
+
+- **The WAV persists in `debriefs/pending/` until transcription *succeeds*.**
+  `keep_audio = false` means discard-after-success, never never-write. Conflating
+  those silently eats a debrief on any crash — during a month when nobody is
+  watching.
+- **The pending directory is a queue, drained on next boot.** Quitting
+  mid-transcription then costs nothing. Designing it as a queue from day one also
+  means P1 hardens it into a systemd job as a deployment change rather than a
+  rewrite.
+- **Whisper loads on the worker only.** Boot stays instant, but `small` at int8
+  is roughly a gigabyte resident — fine on 8 GB, and the point where the resident
+  model daemon stops being theoretical.
+
+### Two frictions the plan had not named
+
+**The corpus depends on a busy person's daily discipline.** Capture must be
+trivial to reach or the dead zone yields 8 rambles rather than 40. Resolved by
+routing it through direct-to — one key, then the word `debrief` — rather than
+adding a fifth global key. The global set stays closed at four (direct-to, back,
+home, quit); new capabilities cost a keyword, not a keybinding. That property is
+what keeps the surface small as the system grows. Target is *most days*, not a
+streak.
+
+**D3's eval corpus cannot enter the repo.** Real rambles are a diary, and this
+repository may be shown in a university application. The eval harness runs
+locally against `~/bloc/debriefs/` and reports aggregate precision/recall;
+committed tests use synthetic fixtures only. Same principle as the vault: real
+data stays home, only the machinery is public.
+
+### Smaller corrections
+
+- **Trend honesty at n≈40:** present observations, not statistics — sparklines
+  and "you said *tired* 9 times; 6 were Thursdays", never correlation
+  coefficients. Defensible statistics need months of data; that is a backlog
+  item.
+- **Migration safety had a gap:** moving originals to `archive/pre-unification/`
+  protects against loss but not against a buggy migrator mangling content while
+  writing. A plain `tar` of `~/bloc` to a different location is now a required
+  pre-flight step.
+- **WSL is a hard rule from S2 onward,** not a suggestion. All three fatal Linux
+  bugs came from Windows-only development, and weeks 1–10 are laptop weeks. Any
+  session touching `keys.py` or an input loop verifies under WSL.
+- **Pace, stated in hours:** two sessions a week is roughly 5–6 focused hours
+  weekly for three of the four months.
+
+### Next
+
+**S2** — `bloc/ui/`, as planned.
