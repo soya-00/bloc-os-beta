@@ -13,7 +13,7 @@ why alignment drifted between screens.
 
 from __future__ import annotations
 
-from bloc.ui.theme import Glyphs
+from bloc.ui.theme import SEPARATOR_WIDTH, Glyphs
 
 #: Default column at which the trailing field starts. One constant, one alignment.
 COL = 52
@@ -71,12 +71,19 @@ def sparkline(done: int, total: int, width: int, glyphs: Glyphs) -> str:
     return bar(done / total, width, glyphs)
 
 
-def separator(glyphs: Glyphs, style: str = "single") -> str:
-    """Horizontal rule. `style` is one of 'single', 'double', 'dot'."""
-    return {
+def separator(glyphs: Glyphs, style: str = "single", width: int = SEPARATOR_WIDTH) -> str:
+    """
+    Horizontal rule. `style` is one of 'single', 'double', 'dot'.
+
+    The width is an argument because the MFD panel is 52 columns wide while the
+    theme's default rule is 40 — a rule that cannot match the panel it sits in is
+    a layout decision trapped in theme data.
+    """
+    char = {
         "double": glyphs.separator_dbl,
         "dot": glyphs.separator_dot,
     }.get(style, glyphs.separator)
+    return char * width
 
 
 def field(label: str, value: str) -> str:

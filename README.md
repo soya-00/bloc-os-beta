@@ -110,6 +110,28 @@ soft keys along the bottom whose labels change with context. v0.2 replaces the 1
 top-level commands with four modes — OBJECTIVES · AGENDA · TRAFFIC · SYSTEMS —
 plus a global natural-language input available from any screen, typed or spoken.
 
+```
+◈ BLOC OS ······························· OBJECTIVES
+3 QUEUED, 1 OVERDUE
+════════════════════════════════════════════════════
+
+  ▢ Call the dentist
+  ▢ Fix the auth thing
+  ▢ Draft the essay
+
+────────────────────────────────────────────────────
+[C] COMPLETE  [E] EDIT  [ ] SCRUB  [+] NEW
+[/] DIRECT-TO  [ESC] BACK  [`] HOME  [Q] QUIT
+```
+
+The bottom two rows are the whole idea. Screens declare their soft keys as data,
+so the legend renders itself and can't drift out of sync with the bindings. The
+four keys on the last row work from every screen, are resolved before the screen
+ever sees them, and **the set is closed** — a soft key that tries to claim one
+raises rather than shadowing it. New capabilities cost a direct-to keyword, not a
+keybinding, which is the property that keeps the surface small as the system
+grows.
+
 **One record: the flight strip.** In ATC, a strip carries a callsign, times and a
 status, and moves between bays as the flight progresses — which is simultaneously
 a kanban card, an agenda block and a task. v0.2 unifies them into one record in
