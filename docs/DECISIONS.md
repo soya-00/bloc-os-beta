@@ -566,3 +566,171 @@ with round-trip tests). The `**due:**` mismatch between `ui/autoflight.py` and
 own parser; `formats.py` is the fix, and its round-trip tests are what stop it
 recurring. S4 and S5 are a pair — the strip record lands on top of these
 parsers, and the plan's rule is never to stop between S5 and S6.
+
+---
+
+## H1 — Inbox data loss (hotfix, out of sequence)
+
+`core/vault.py` writes task lines ending in `\n`, but `complete_task` and
+`delete_task` rewrite the file with `"\n".join(lines)`, dropping it. The next
+append lands on the previous line and **one task disappears from every reader**:
+
+    after complete:  '- [x] Alpha …\n- [ ] Bravo '
+    after next add:  '- [x] Alpha …\n- [ ] Bravo - [ ] Charlie \n'
+    list_tasks()  →  ['Bravo - [ ] Charlie']
+
+Also anchored the `- [ ]` → `- [x]` replace, which was unanchored and rewrote
+the marker inside any title that contained it.
+
+**This suspends S1's rule against patching modules scheduled for deletion**,
+deliberately and once. The rule exists to stop effort going into doomed code,
+not to let doomed code destroy the data the rewrite has to migrate. `inbox.md`
+is one of the three files the week-5 migration reads, and every day this stayed
+in cost another task and left another corrupted line to untangle. No test ships
+with it — that is the other half of the rule holding: a test here would be
+deleted with the module in S15b, and the replacement gets round-trip tests in S4.
+
+---
+
+## S4 — The core data layer
+
+**Date:** 2026-07-29
+**Milestone:** Month 1, week 2
+
+### What changed
+
+`bloc/core/` now holds `files.py` (atomic writes, one sanitised slug),
+`clock.py` (injectable now), `formats.py` (one parser per format) and `vault.py`
+(filesystem CRUD). 120 new tests, 269 total.
+
+### What the survey found, and why it reshaped the session
+
+A full read of every on-disk format v0.1 writes turned up more than the eleven
+known defects:
+
+- **Eighteen reader/writer disagreements across seven formats.** The `**due:**`
+  mismatch was not an outlier, it was the pattern.
+- **Not one of the eight persisted date formats is used symmetrically.** Every
+  date written is re-read as an opaque string, by a regex matching markup no
+  writer produces, or not at all. There is no `strptime` and no
+  `date.fromisoformat` anywhere in v0.1.
+- **Zero atomic writes** across fourteen write sites, six of which rewrite an
+  entire file to change one record.
+- **Two slug functions, neither sanitising** — `new_board("A/B")` resolves
+  outside `boards/`.
+- **Lossy kanban round-trips**: `#` anywhere in a card title is eaten, a literal
+  `📅 2026-08-01` in a title is stolen as a due date.
+
+That turned `formats.py` from tidying into the point of the session.
+
+### Three kinds of time, and the thing that confirmed it
+
+BLOC stores three things that look alike and behave differently:
+
+| Kind | On disk | Question |
+|---|---|---|
+| instant | `2026-08-14T09:12:03Z` | when did this happen |
+| date | `2026-08-14` | which day |
+| wall clock | `2026-08-14T14:00` | what does the clock say |
+
+Storing everything as UTC moves a 14:00 block to 13:00 across a DST change;
+storing everything naive makes a running timer wrong across the same boundary.
+Splitting them costs one rule and gets both right.
+
+**TOML already made this distinction**, which is the part worth recording:
+offset-date-time, local-date and local-date-time are exactly these three, and
+`tomllib` returns aware `datetime`, `date` and naive `datetime` respectively.
+Verified before writing tests against it. So strip frontmatter stores dates
+natively rather than as strings and the type survives the round trip without
+`formats.py` being involved at all — the functions there are for filenames,
+legacy files and rendering.
+
+### Choices made
+
+- **`+++` frontmatter fences, not `---`.** The v0.1 journal format already uses
+  `---` as its entry separator. A delimiter that collides with existing content
+  is a parser that works until it doesn't, and there is a test with a journal
+  separator inside a note body proving it.
+
+- **`find_checkboxes` returns every task in a line, not the first.** H1 stopped
+  new corruption but did not repair old, so the migration will meet
+  `- [ ] Bravo - [ ] Charlie` lines. The cost is that a title genuinely
+  containing `- [ ]` splits in two; the dry-run prints every split first.
+
+- **Date disambiguation is explicit.** A `📅` date is unambiguously a due date. A
+  bare date is not: `complete_task` appends a completion stamp after the tags,
+  while a kanban card's bare date is a due date, and both appear on `[x]` lines.
+  Rule: on a completed line the *last* bare date is the stamp and anything before
+  it is the due date. That is exactly what each writer produces.
+
+- **New notes get frontmatter; old ones are read leniently.** Title falls back to
+  the first H1, tags to the header region, creation time to the filename stamp —
+  the three things v0.1 wrote and never read back. **This is what makes it a
+  change with no migration**: existing notes keep working untouched forever, and
+  the week-5 migration stays scoped to tasks, boards and calendar.
+
+- **Legacy tags are read from the first four lines only.** Scanning the whole
+  document would harvest every `#word` in the prose, including comments in fenced
+  code. v0.1 wrote the tag line third.
+
+- **`format_wallclock` rejects an aware datetime** rather than dropping the
+  offset quietly. The conversion is lossy, so it happens at the call site via
+  `clock.local_wallclock()`, where it is visible.
+
+- **`today()` is not `now().date()`.** That would be the *UTC* date, wrong for
+  several hours a day in most of the world. There is a test that runs the same
+  instant through two timezones and gets two different days.
+
+- **`Vault.__init__` creates nothing.** `ensure()` is explicit, because
+  constructing a vault to read one path should not scatter nine directories —
+  which is how v0.1 left empty `exports/` folders in every test run. Legacy
+  directories are addressable so the migration can find them, and never created.
+
+- **`atomic_write_text` puts its temp file in the destination directory** and
+  fsyncs the directory after the rename. `os.replace` is only atomic within one
+  filesystem, and the directory fsync is the step people skip — it is the one
+  that matters on a Pi with no UPS.
+
+- **`BLOC_HOME` overrides the vault root**, so the migration can dry-run against
+  a copy and tests need no `Path.home` monkeypatching.
+
+### Two v0.1 search bugs fixed in passing
+
+The archive exclusion was `if "archive" in str(path)` — a substring test against
+the whole path, so any note whose own name contained the word was silently
+invisible. Now a path-component test. And `read_text` was called unguarded, so
+one non-UTF-8 file anywhere under the root aborted the entire search with a
+traceback. Both have tests named after the symptom.
+
+### Not done, deliberately
+
+- **`state.py` moved to week 12.** Its first consumer is S13's pulse service,
+  eight weeks out. Same call D2 made moving the HAL out of week 4, for the same
+  reason: an interface with no caller gets the wrong shape. Nothing before week
+  12 needs it — the app registry doesn't, DEBRIEF's pending queue is a directory
+  of files rather than JSON, and S12's boot probes read live.
+- **No task CRUD.** Tasks become strips in S5; porting `list_tasks`/`new_task`
+  now means writing code deleted a week later.
+- **No legacy format readers.** They live in S6's migration module and die with
+  it, so throwaway code stays visibly throwaway.
+- **Nothing deleted.** The legacy shell still reads `core/vault.py` for notes,
+  journal and search, so the ruff exclude list is unchanged — same as S2 and S3.
+
+### Verification
+
+`ruff check` clean, 269 tests green. Against a scratch vault: a 14:00 block is
+still 14:00 in November under `TZ=Europe/London`; a note titled
+`../../etc/passwd #x 🔥` lands at `notes/2026-07-29-17-42-etc-passwd-x.md` with
+its title intact; the same title twice in one minute gives two files;
+`find_checkboxes` recovers both halves of a concatenated line; and a write torn
+by a patched `os.replace` leaves the original byte-identical with no temp file
+left behind.
+
+### Next
+
+**S5** — the strip record: schema, TOML frontmatter, parser, `bloc/core/strips.py`.
+It lands directly on `formats.py`'s frontmatter and native TOML dates, so the
+record type is mostly a dataclass and a validation pass. **S5 and S6 are a pair**
+— the plan's rule is never to stop between them, because S6 builds the migration
+that reads the legacy formats and a half-built migration is the one genuinely
+dangerous state in this project.
