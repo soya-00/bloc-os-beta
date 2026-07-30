@@ -884,3 +884,88 @@ Lands on `formats.py`'s frontmatter and native TOML dates, so it is largely a
 dataclass and a validation pass. **S5 and S6 are a pair** — never stop between
 them, because a half-built migration is the one genuinely dangerous state in
 this project.
+
+---
+
+## S5 — The strip record
+
+**Date:** 2026-07-29
+**Milestone:** Month 1, week 3
+
+### What changed
+
+`bloc/core/strips.py` — the one record that replaces tasks, kanban cards and
+agenda blocks. 52 tests, 395 total.
+
+v0.1 had three stores that could not talk: `t`/`l`/`c`/`d` operated on
+`inbox.md`, `k` operated on `boards/*.md`, and there was no path between them —
+so the ATC console, the best screen in the project, could not see board work at
+all. The flight-strip metaphor was already right; this is the data model
+catching up to it.
+
+### Choices made
+
+- **Five statuses, not four.** `queued · active · holding · done · scrubbed`.
+  The original plan omitted `holding`, which left the HOLDING bay in the D6
+  screens with nothing behind it. *Holding* means blocked on someone else —
+  genuinely distinct from "not started yet", and the metaphor is exact: an
+  aircraft in a hold is waiting for a clearance it has not been given.
+
+- **`Status` is a `StrEnum`.** A typo fails at the boundary instead of
+  propagating as a string nothing matches, and it still serialises to TOML as
+  the plain word it looks like.
+
+- **Status is not column.** `status` is the closed vocabulary the whole system
+  understands; `column` is free-form board position invented by whoever made the
+  board. A card in "Review" is still `active`. Conflating them is what would
+  make boards and objectives disagree about the same strip.
+
+- **The filename is the identity.** `next_id()` scans `strips/` and takes
+  `max + 1`, so there is no counter file to corrupt, desync or contend on — the
+  directory cannot disagree with itself about what exists. `create()` re-checks
+  against the filesystem in a loop, so two creates in the same instant produce
+  two strips rather than one overwriting the other.
+
+- **Numbers are never reused.** A callsign is a permanent name for a thing that
+  happened; reusing `BLK-041` would silently repoint every reference to it.
+
+- **Dates are native TOML types.** `due` comes back a `date`, `created` an aware
+  `datetime`, `scheduled_start` a naive one — the S4 discovery paying off, with
+  `formats.py` not involved at all. The coercion helpers check the *kind* of
+  time rather than parsing strings, because getting the kind wrong is the actual
+  failure: a `scheduled_start` carrying an offset is an instant pretending to be
+  a wall clock, and it drifts an hour twice a year without ever raising.
+
+- **`with_status()` stamps the timestamp its transition implies.** Going active
+  sets `started`; going done sets `completed`. In the caller, every caller would
+  have to remember, and the one that forgets produces a completed strip with no
+  completion time — which quietly breaks every trend DEBRIEF is meant to draw.
+
+- **Strict parse, forgiving walk.** `Strip.parse()` raises rather than guessing;
+  `StripStore.all()` catches, skips, and collects failures on `store.errors`.
+  Guessing at the parse level would mean a corrupt strip silently becoming a
+  *different valid* strip, which is worse than either — and swallowing at the
+  walk level would mean a strip vanishing from your list, which is worse than an
+  error.
+
+- **Scrubbing sets a status; nothing is unlinked.** A delete you cannot undo is
+  data loss with a friendly name, and `archive/` already exists for anything
+  that genuinely has to leave.
+
+- **Empty fields are omitted from the document.** The file is meant to be read
+  and hand-edited; a wall of empty keys is neither.
+
+### One thing the verification run caught
+
+`all()` initially reported a stray `README.md` in `strips/` as a corrupt strip.
+`next_id()` already ignored non-conforming filenames; `all()` did not, so a file
+that never claimed to be a strip would have put a permanent error on the SYSTEMS
+screen. Now both skip anything whose stem is not a callsign. Found by running the
+plan's verification checklist rather than by a test — the test came after.
+
+### Next
+
+**S6** — the migration: `inbox.md` + `boards/*.md` + `calendar/*.md` → `strips/`.
+Built and dry-run verified only; **execution waits for week 5**, hours before the
+surface that reads the migrated data. **S5 and S6 are a pair and this is the
+half-built state the plan warns about** — do not stop here.
