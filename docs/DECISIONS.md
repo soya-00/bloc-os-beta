@@ -1089,3 +1089,109 @@ one store. It is what makes the migrated data visible, and the first thing that
 proves the unification is real rather than shared storage. Per the revised plan
 it ends with a `--demo` flag, so the verification is executable rather than
 described.
+
+---
+
+## S7 — The view layer
+
+`bloc/core/views.py`. Board, agenda, bays and list — four views over one store.
+435 tests.
+
+This is the session that makes Part II-C's claim testable rather than asserted.
+A strip is a task, a card, an agenda block and a flight strip only if all four
+can be **derived**. If they need four sources, the unification was never real
+and `strips/` is a fourth store with nicer frontmatter.
+
+`TestOneStore` is that claim as a test: one strip, and all four views return
+**the same object**, not equal copies.
+
+### Pure functions over a list, not methods on a store
+
+Views take `list[Strip]`, so they are testable without a filesystem and a screen
+holding strips does not re-read the vault to show them a second way. Reading
+happens once, at the edge — which is also what lets `index.py` later replace
+that single read without touching any view.
+
+Sorting lives here rather than in the screens, for the reason the palette lives
+in `theme.py`: two screens that sort differently are two screens that disagree
+about which task is most urgent. `urgency()` is exported so a screen can sort a
+subset without inventing its own order.
+
+### What goes in a bay
+
+Due today or earlier and still open, **or** scheduled today, **or** currently
+active. The LANDED bay holds what was completed that day, not everything ever
+finished.
+
+The overdue clause is load-bearing. A task vanishing from the board the day
+after it was due is how a task list quietly stops being trusted — and
+`pressure` already exists as a colour role for exactly this.
+
+Undated backlog deliberately does not appear. `objectives()` is the workload;
+the bays are a day.
+
+### Board columns have no order, and that is a real gap
+
+`Strip` carries `board` and `column` as bare strings. In `boards/*.md` the
+column order **was** the file order, and one file per strip cannot carry that
+across. Same root cause, second symptom: a column holding nothing is mentioned
+by no strip, so it cannot be derived at all — and on a kanban board the empty
+column is the one you want to drop work into.
+
+**Decision: a canonical order now, config in S8.** `CANONICAL_COLUMNS` gives the
+workflow order and unknown columns sort after it alphabetically, which is
+correct for every board created from v0.1's defaults. S8 adds a per-board config
+section that overrides the order *and* lets an empty column be declared.
+
+A board manifest file per board was considered and rejected. Its real advantage
+was that board structure would travel with the vault — but **config already
+lives at `~/bloc/config/`, inside the vault**, so it is git-tracked and copied
+to the USB stick identically. What was left was a second vault format plus a
+reconciliation rule for strips pointing at boards with no manifest, bought for
+tidiness. Grouping by status instead was also rejected: it reverses Part II-C's
+explicit "status is not column" and would make the field S6 had just migrated
+dead weight.
+
+The canonical order is deliberately **not** shared with the migration's column
+table. That one infers a status from a column name and dies at S15b; this one
+orders columns for display and lives on. Same words, different jobs, different
+lifetimes.
+
+### Cards keep creation order inside a column
+
+Callsign order, which is creation order — the closest thing to the manual
+arrangement `boards/*.md` recorded as file order. Sorting a board by urgency
+would silently rearrange a layout made by hand, which is the one thing a kanban
+board must not do. Every other view sorts; this one deliberately does not.
+
+### The demo flag
+
+`python -m bloc.core.views --demo` renders all four views over the real vault,
+and `--day` moves to any date. The plan's verification for this session is
+"create one strip, confirm it appears in all four views without being written
+four times"; the flag makes that runnable rather than described.
+
+It earned itself immediately. Rendering a migrated vault showed a `✓` agenda
+block present in the agenda for its day but **absent from that day's LANDED
+bay** — because S6 sets `status = done` from the tick but records no completion
+timestamp, the v0.1 agenda format having nowhere to store one. `bays()` will not
+claim something was finished on a day nothing says it was, so the honest
+behaviour ships, with a test naming it. It is narrow: migrated inbox tasks do
+carry completion dates, and anything completed from here on is stamped by
+`with_status()`. Only historical ticked blocks are affected.
+
+`--day` also closes a v0.1 gap for free. `AgendaFile` accepted a date and was
+only ever constructed with the default, so there was no way to plan tomorrow.
+Every view here takes the day as an argument, so other days cost a flag.
+
+### Deliberately not done
+
+**No empty columns** until S8 supplies them. **No `index.py`** — `all()` is
+still an O(n) walk, and these views are the callers that make an FTS cache worth
+building later. **Nothing deleted**; the ruff `extend-exclude` list is unchanged.
+
+### Next
+
+**S8** — config: schema, validation, versioning, per-board columns, the `[voice]`
+extra that stops Whisper being a required dependency, and local git backup of
+the vault.
