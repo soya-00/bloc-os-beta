@@ -969,3 +969,123 @@ plan's verification checklist rather than by a test — the test came after.
 Built and dry-run verified only; **execution waits for week 5**, hours before the
 surface that reads the migrated data. **S5 and S6 are a pair and this is the
 half-built state the plan warns about** — do not stop here.
+
+---
+
+## S6 — The migration
+
+`bloc/jobs/legacy.py` and `bloc/jobs/migrate.py`. Reads `inbox.md`,
+`boards/*.md` and `calendar/*.md`; writes strips. **Built and dry-run verified
+only — execution waits for week 5**, hours before the surface that reads the
+migrated data. Running it now would blind the legacy shell, which reads those
+files directly, and break the strangler-fig promise that the old system works
+until it is replaced.
+
+453 tests.
+
+### Most of the parsing already existed
+
+S4 wrote `parse_checkbox()` against *both* v0.1 checkbox encodings — the bare
+positional date in `inbox.md` and the `📅`/`#tag`/`🔥` form in `boards/*.md` —
+including the rule that decides whether a bare date on a completed line is a due
+date or a completion stamp. `find_checkboxes()` returns every task in a line
+rather than the first, written specifically so this migration recovers both
+halves of `- [ ] Bravo - [ ] Charlie`.
+
+Neither needed rewriting. Only the agenda header wanted a parser of its own, and
+it is one regex. An interface built for a caller that did not exist yet turned
+out to fit — which is worth noting, because it is the opposite of what moving
+`state.py` and the HAL to their consumers assumed.
+
+### Plan, then apply
+
+`plan()` returns everything it would do without touching disk; `apply()` is a
+dumb executor over that result. The dry-run and the real run are therefore **the
+same computation**, differing only in whether `apply` is called. A preview that
+re-derives its own answer is a preview that can disagree with the thing it
+previews.
+
+Callsigns are allocated during planning, so the diff shows the real ids, and
+`read_all()` has a deliberately fixed order — inbox, boards by name, calendar by
+date — so two dry-runs agree and the real run assigns what the rehearsal showed.
+
+### The order of operations
+
+1. Dry run is the default; writing takes `--apply`. A flag survives in shell
+   history, an interactive confirmation does not.
+2. A vault already at the format version exits cleanly with nothing to do. This
+   is what makes re-running a no-op, and it exits **0** so it is safe in a script.
+3. A vault holding strips but carrying no version stamp is refused outright —
+   that is a state this tool did not create, and guessing risks a second copy of
+   every record.
+4. **Strips are written before originals move.** A failure in the second half
+   leaves the legacy vault intact and the old shell still working. There is a
+   test that patches `shutil.move` to raise and asserts `inbox.md` is unchanged.
+5. Originals are *moved* to `archive/pre-unification/`, keeping their relative
+   layout, and an existing destination is never overwritten.
+6. `.bloc-version` is stamped **last**. It is the commit point: the stamp means
+   every earlier step finished.
+
+None of that protects against this tool mangling content on the way through,
+which is why the dry-run output ends by telling you to `tar` the vault
+elsewhere first. The archive move guards against loss, not against a bug.
+
+### Judgement calls
+
+- **Board columns map to statuses**; unrecognised columns fall to `queued` and
+  are flagged `(unmapped → queued)` in the diff rather than guessed at silently.
+  `Review` maps to `active`, because status is not column — a card in review is
+  still being worked on.
+- **An unticked agenda block stays `queued` however old it is.** Marking elapsed
+  blocks done would fabricate completion history in the record that is supposed
+  to be the truth.
+- **But a card sitting in a `Done` column is `done`, ticked or not.** These look
+  contradictory and are not: the principle is **infer from a user's action,
+  never from the passage of time.** Moving a card to Done is an action. Time
+  passing is not.
+- **Legacy completion dates widen to an instant at local noon.** `Strip.completed`
+  is an instant and the old format stores only a date. Noon rather than midnight
+  because midnight is the value most likely to cross a day boundary under a
+  timezone conversion, and a stamp on the wrong day is worse than one that is
+  vague about the hour.
+- **Checkboxes nested in an agenda block stay in its body.** `Strip` has no
+  parent field and inventing one inside a migration is scope nobody agreed to.
+  The count is reported so the decision is visible rather than silent.
+
+### Two things the verification run caught
+
+Neither came from a test. Both tests were written afterwards.
+
+**A `## ` line that did not parse as a block header was absorbed into the
+previous block's body** — swallowing the broken header *and* everything beneath
+it without a word. A heading is never body text; the check now runs before the
+body branch and reports what it skipped.
+
+**A block crossing midnight ended before it started.** `23:30 → 00:15` produced
+an end 23 hours earlier than its start, because both times were dated from the
+filename. v0.1 had the same flaw and got away with it by storing strings; in a
+typed field it hands every view a negative duration. `end <= start` now rolls
+the end to the next day.
+
+That is three sessions running where working through the checklist by hand found
+something reading the code did not.
+
+### Deliberately not done
+
+**Nothing is executed.** No vault is migrated, and `~/bloc` was never read — the
+rehearsals ran against fixture vaults under `BLOC_HOME`.
+
+**Nothing is deleted.** The legacy shell still reads all three formats, so the
+ruff `extend-exclude` list is unchanged, as in S2 through S5.
+
+**No parent/child link between strips**, no repair of titles that legacy formats
+mangled (a `#` in a title was a tag in v0.1 and stays one), and no attempt to
+merge duplicate records across the three sources.
+
+### Next
+
+**S7** — the view layer: board, agenda, flight-strip and list queries over the
+one store. It is what makes the migrated data visible, and the first thing that
+proves the unification is real rather than shared storage. Per the revised plan
+it ends with a `--demo` flag, so the verification is executable rather than
+described.
