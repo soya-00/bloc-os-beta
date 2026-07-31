@@ -6,10 +6,10 @@ Domain core — no terminal, no hardware, no network. Fully unit-testable.
     formats.py  one parser per vault file format, symmetric with its writer
     vault.py    filesystem CRUD; the single source of truth
     strips.py   the unified record — task, card, agenda block and flight strip
+    views.py    board / agenda / bay / list queries over the one store
 
 Planned:
 
-    views.py    board / agenda / strip / list queries over the one store
     state.py    atomic JSON state under ~/bloc/state/
     index.py    rebuildable SQLite FTS cache over the vault
     events.py   in-process pub/sub
