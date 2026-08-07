@@ -11,9 +11,6 @@ code.
 
 ## S1 — Repository hygiene, packaging, package skeleton
 
-**Date:** 2026-07-27
-**Milestone:** Month 1, week 1
-
 ### What changed
 
 - Added `.gitignore` and untracked `venv/` and `__pycache__/`.
@@ -86,7 +83,6 @@ dicts merge into one.
 
 ## D1 — Design decisions: interaction model, object model, DEBRIEF
 
-**Date:** 2026-07-28
 **No code.** Four decisions taken before S2, because each one determines the
 shape of code written in the weeks after it.
 
@@ -225,7 +221,6 @@ Autoflight port, or extraction.
 
 ## D2 — Schedule review: a sequencing bug and three shape fixes
 
-**Date:** 2026-07-29
 **No code.** A detailed read-through of the schedule before writing anything
 against it, which surfaced one correctness bug and several places where the plan
 was quietly optimistic.
@@ -351,9 +346,6 @@ data stays home, only the machinery is public.
 
 ## S2 — The aesthetic layer
 
-**Date:** 2026-07-29
-**Milestone:** Month 1, week 1
-
 ### What changed
 
 `bloc/ui/` now holds the canonical presentation layer: `theme.py` (glyph and
@@ -445,13 +437,6 @@ output caught what the unit tests did not, because the tests asserted on HUD.
   modules; the entry comes off when the last of them goes in S15b.
 - **Nothing is wired up.** `theme.py` supersedes `ui/environment.py`, but the
   legacy shell keeps its own copy until each screen is ported.
-
-### Housekeeping
-
-The D2 entry above was orphaned when PR #1 merged at an earlier head than the
-branch tip, so it never reached `main`. Recovered by cherry-pick onto this
-branch. Worth watching for on future merges: confirm the merge commit's parent
-is the branch tip, not just that the merge succeeded.
 
 ### Next
 
@@ -594,9 +579,6 @@ deleted with the module in S15b, and the replacement gets round-trip tests in S4
 
 ## S4 — The core data layer
 
-**Date:** 2026-07-29
-**Milestone:** Month 1, week 2
-
 ### What changed
 
 `bloc/core/` now holds `files.py` (atomic writes, one sanitised slug),
@@ -734,6 +716,9 @@ record type is mostly a dataclass and a validation pass. **S5 and S6 are a pair*
 — the plan's rule is never to stop between them, because S6 builds the migration
 that reads the legacy formats and a half-built migration is the one genuinely
 dangerous state in this project.
+
+---
+
 ## H2 — pygame-ce, and a supported-Python gap
 
 `pip install -e .` fails on Python 3.14: upstream `pygame` has no 3.14 wheel, so
@@ -764,14 +749,11 @@ now has a concrete failure behind it rather than a principle.
 
 ## D6 — The design system
 
-**Date:** 2026-07-29
-**Milestone:** Month 1, week 2
-
 ### What changed
 
 `docs/DESIGN.md` is new — the frame, the grid, the colour roles, the strip
 anatomy. `bloc/ui/theme.py` is rewritten against it, `console.py` gains colour
-depth detection, and `widgets.py` gains the grid. 331 tests.
+depth detection, and `widgets.py` gains the grid. 343 tests.
 
 ### The renderer question, settled by rendering
 
@@ -889,13 +871,10 @@ this project.
 
 ## S5 — The strip record
 
-**Date:** 2026-07-29
-**Milestone:** Month 1, week 3
-
 ### What changed
 
 `bloc/core/strips.py` — the one record that replaces tasks, kanban cards and
-agenda blocks. 52 tests, 395 total.
+agenda blocks. 53 tests, 396 total.
 
 v0.1 had three stores that could not talk: `t`/`l`/`c`/`d` operated on
 `inbox.md`, `k` operated on `boards/*.md`, and there was no path between them —
@@ -1095,7 +1074,7 @@ described.
 ## S7 — The view layer
 
 `bloc/core/views.py`. Board, agenda, bays and list — four views over one store.
-435 tests.
+492 tests.
 
 This is the session that makes Part II-C's claim testable rather than asserted.
 A strip is a task, a card, an agenda block and a flight strip only if all four
